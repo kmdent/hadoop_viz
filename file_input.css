@@ -1,4 +1,4 @@
-#progress_bar { 
+#progress_bar {
     margin: 10px 0;
     padding: 3px;
     border: 1px solid #000;
@@ -10,15 +10,24 @@
     webkit-transition: opacity 1s linear;
     width:900px;
 }
-#progress_bar.loading { 
+#progress_bar.loading {
     opacity: 1.0;
 }
-#progress_bar .percent { 
+#progress_bar .percent {
     background-color: #99ccff;
     height: auto;
     width: 0;
 }
 
-#slider-range-max { 
-    width: 600px;
+#slider {
+    width: 550px;
+}
+
+#button_bar {
+    display: none;
+}
+
+svg .link_line {
+  stroke: rgba(255,255,255,.5);
+  stroke-width: 1.5;
 }

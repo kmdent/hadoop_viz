@@ -1,3 +1,6 @@
+var flow_map = [];
+var SVG = null;
+var svgSize = {x : 600, y : 600};
 
 function circleCoords(radius, steps, centerX, centerY) {
     var xValues = [centerX];
@@ -27,7 +30,7 @@ function updateServers(SVG, coords, rad, servers) {
 
     // Create the Fucking circles
     // http://stackoverflow.com/questions/13615381/d3-add-text-to-circle
-    for(i = 0; i < xValues.length; i++) {
+    for (i = 0; i < xValues.length; i++) {
         SVG.append("circle")
             .style("stroke", "gray")
             .style("fill", "white")
@@ -49,17 +52,111 @@ function updateServers(SVG, coords, rad, servers) {
     return servers;
 }
 
+function createServers() {
+    var numCircles = 10;
+    var circles = d3.range(numCircles).map(function(i, d) {
+        return [Math.round(50 + (i/numCircles)*(600 - 50)),
+                Math.round(30 + Math.random()*(600 - 80))];
+    });
 
-/* buidFlowMap flows -> {time: {src : "10.", dst : "10."}}
- * This function is where the heavy lifting happens. We scroll through
- *  all the flows and build a relevent map of changes in flows over
- *  time. Note: this in a CHANGE map.
-*/
+    console.log(circles);
+    var g_circles = SVG.append("g")
+            .attr("class","circles");
 
-function buildFlowMap(flows, time_stats) {
-    
+    $.each(circles, function(i, d) {
+        g_circles.append("circle")
+            .attr('filter', 'url(#dropShadow)')
+            .attr("class","circle")
+            .attr("id", "circle" + i)
+            .attr("r", 30)
+            .attr("cx", d[0])
+            .attr("cy", d[1]);
+    });
 }
 
+/* buidFlowMap flows -> [flow1, flow2, ..., flowN]
+ * This function is where the heavy lifting happens. We scroll through
+ *  all the flows and build a relevent map of changes in flows over
+ *  time.
+*/
+/*TODO: time_stats is currently unused. Do I need it?*/
+function buildFlowMap(flows, time_stats) {
+
+    var map = [];
+    for ( var flow in flows ) {
+        if (flows.hasOwnProperty(flow)) {
+            var entry = {};
+            var tags = flows[flow]["trace-tags"];
+            if (tags.length > 0) {
+                tags = tags[0];
+
+                entry.jid = flows[flow].jid;
+                entry.src = tags["source"];
+                entry.src_port = tags["source_port"];
+                entry.dst = tags["dest"];
+                entry.dst_port = tags["dest_port"];
+                entry.start = tags["timestamp"];
+
+                /*Get the endTime*/
+                var tstat = flows[flow]["tstat"];
+                if (tstat.length <= 1) {
+                    // 88th entry is the length of the request
+                    var flow_len = parseInt(tstat[0][88]);
+                    entry.end = entry.start + flow_len;
+                }
+                map.push(entry);
+            }
+        }
+    }
+    return map;
+}
+
+/* Alternate to flow map. Much faster*/
+function buildChangeMap() {
+    var map = {};
+    for ( var flow in flows ) {
+        if (flows.hasOwnProperty(flow)) {
+            var entry = {};
+            var tags = flows[flow]["trace-tags"];
+            if (tags.length > 0) {
+                tags = tags[0];
+
+                entry.jid = flows[flow].jid;
+                entry.src = tags["source"];
+                entry.src_port = tags["source_port"];
+                entry.dst = tags["dest"];
+                entry.dst_port = tags["dest_port"];
+                entry.start = tags["timestamp"];
+
+                /*Get the endTime*/
+                var tstat = flows[flow]["tstat"];
+                if (tstat.length <= 1) {
+                    // 88th entry is the length of the request
+                    var flow_len = parseInt(tstat[0][88]);
+                    entry.end = entry.start + flow_len;
+                }
+
+                /* Deal with the starting entry change*/
+                if (map[entry.start] == undefined) {
+                    map[entry.start] = [entry];
+                    for (var i = entry.start; i > 0; i-- ) {
+                        if (map[i] != undefined) {
+                            map[entry.start] = map[i].concat([entry]);
+                        }
+                    }
+                } else {
+                    map[entry.start] = map[entry.start].concat([entry]);
+                }
+
+                /*Deal with making sure the flow is removed at the end*/
+                if (map[entry.end] == undefined) {
+                    map[entry.end] = [];
+                }
+            }
+        }
+    }
+    return map;
+}
 
 /*
  * processFile input_file_text -> creates simulation
@@ -72,11 +169,15 @@ function processFile(text){
     var servers = getServers(flows);
     var time_stats = generateTimeStats(flows);
 
-    var flow_map = buildFlowMap(flows, time_stats);
+    flow_map = buildFlowMap(flows, time_stats);
+    console.log(flow_map);
+
+
     console.log(flows);
     console.log(time_stats);
 
-    setup(servers, flows, time_stats);
+    /* TODO: I shouldn't need the flows in the setup, right?*/
+    setup(servers, flows, time_stats, flow_map);
 }
 
 /*
@@ -108,9 +209,9 @@ function generateTimeStats(input) {
             if (tstat.length <= 1) {
 
                 // 88th entry is the length of the request
-                var time_end = parseInt(tstat[0][88]);
-                if ((timestamp + time_end) > ret["max"]) {
-                    ret["max"] = (timestamp + time_end);
+                var flow_len = parseInt(tstat[0][88]);
+                if ((timestamp + flow_len) > ret["max"]) {
+                    ret["max"] = (timestamp + flow_len);
                 }
             }
         }
@@ -145,15 +246,15 @@ function getServers(input) {
     return servers;
 }
 
-function setup(servers, flows, time_stats) {
+function setup(servers, flows, time_stats, flow_map) {
 
     // Initialize the canvas
-    var SVG = d3.select("#viz").append("svg")
-            .attr("width", 600)
-            .attr("height", 600);
-    var numServers = servers.size;
+    SVG = d3.select("#viz").append("svg")
+            .attr("width", svgSize.x)
+            .attr("height", svgSize.y);
+
     // Info About Servers
-    var svgSize = {x : 600, y : 600};
+    var numServers = servers.size;
     var serverCircleRadius = 250;
     var serverRadius = 35;
 
@@ -161,21 +262,68 @@ function setup(servers, flows, time_stats) {
     var serverLayout = circleCoords(serverCircleRadius, numServers,
                                     svgSize.x/2, svgSize.y/2);
 
+
+    // Initialize definitions
+    createDefs(SVG.append('svg:defs'));
+
+
+    // Add classes
+
+    createServers();
+    console.log("HELLO");
+
     console.log(numServers);
+
     // Create the SVG objects
-    updateServers(SVG, serverLayout, serverRadius, servers);
+    //updateServers(SVG, serverLayout, serverRadius, servers);
     setupSlider(SVG, time_stats);
+}
+
+function createDefs(defs) {
+    var dropShadowFilter = defs.append('svg:filter')
+            .attr('id', 'dropShadow');
+    dropShadowFilter.append('svg:feGaussianBlur')
+        .attr('in', 'SourceAlpha')
+        .attr('stdDeviation', 1);
+    dropShadowFilter.append('svg:feOffset')
+        .attr('dx', 0)
+        .attr('dy', 1)
+        .attr('result', 'offsetblur');
+    var feMerge = dropShadowFilter.append('svg:feMerge');
+    feMerge.append('svg:feMergeNode');
+    feMerge.append('svg:feMergeNode')
+        .attr('in', "SourceGraphic");
+}
+
+function renderFlows(value, ts) {
+    var currentFlows = [];
+
+    /* Find the flows that are currently active */
+    for (var i = 0; i < flow_map.length; i++) {
+        if ((value + ts["min"]) < flow_map[i].end && (value + ts["min"]) >= flow_map[i].start) {
+            currentFlows.push(flow_map[i]);
+        }
+    }
+
+    /*TODO : Actually draw the flows*/
+
+}
+
+function play() {
+    var value = $("#slider").slider("option", "value");
+
 }
 
 function setupSlider(SVG, ts) {
     $(function() {
-        $( "#slider-range-max" ).slider({
+        $("#button_bar")[0].style.display = "block";
+        $( "#slider" ).slider({
             range: "max",
             min: 0,
             max: ts["max"] - ts["min"],
             value: 1,
             slide: function( event, ui ) {
-                //console.log(ui.value);
+                renderFlows(ui.value, ts);
             }
         });
     });

@@ -15,7 +15,24 @@ function circleCoords(radius, steps, centerX, centerY) {
     return {x : xValues, y : yValues};
 }
 
-function updateServers(SVG, coords, rad, servers) {
+
+function newCircleCoords(radius, steps, centerX, centerY) {
+    var xValues = [centerX];
+    var yValues = [centerY];
+    var ret = [[centerX, centerY]];
+    for (var i = 1; i < steps; i++) {
+        var cur = [0, 0];
+        cur[0] = (centerX + radius * Math.cos(2 * Math.PI * i /
+                                              steps-Math.PI/2));
+        cur[1] = (centerY + radius * Math.sin(2 * Math.PI * i /
+                                              steps-Math.PI/2));
+        ret[i] = cur;
+   }
+    ret[0][1] = ret[0][1] - radius;
+    return ret;
+}
+
+function updateServers(coords, rad, servers) {
     var xValues = coords.x;
     var yValues = coords.y;
     var dataset = [];
@@ -52,26 +69,54 @@ function updateServers(SVG, coords, rad, servers) {
     return servers;
 }
 
-function createServers() {
+function createServers(coords, rad, servers) {
     var numCircles = 10;
-    var circles = d3.range(numCircles).map(function(i, d) {
-        return [Math.round(50 + (i/numCircles)*(600 - 50)),
-                Math.round(30 + Math.random()*(600 - 80))];
-    });
-
-    console.log(circles);
     var g_circles = SVG.append("g")
             .attr("class","circles");
 
-    $.each(circles, function(i, d) {
+    var dataset = [];
+
+    // Create the Dataset
+    for (var server in servers) {
+        if (servers.hasOwnProperty(server) && server != "size") {
+            dataset.push(server);
+        }
+    }
+    console.log(dataset);
+
+    $.each(coords, function(i, d) {
+        console.log(dataset[i]);
+
         g_circles.append("circle")
             .attr('filter', 'url(#dropShadow)')
             .attr("class","circle")
             .attr("id", "circle" + i)
             .attr("r", 30)
             .attr("cx", d[0])
-            .attr("cy", d[1]);
+            .attr("cy", d[1])
+            .text("Heel")
+            .data(dataset[i]);
+
+        /* TODO: I really should put these in a div so that I can
+         * center these bitches
+         */
+
+        SVG.append('text')
+            .text(dataset[i])
+            .attr("class", "labels")
+            .attr("x", d[0] - 25)
+            .attr("y", d[1] + 3)
+            .attr('fill', 'black');
     });
+
+    var circles = SVG.selectAll("circle")
+            .data(dataset);
+
+    for (var i = 0; i < circles[0].length; i++) {
+        servers[dataset[i]] = circles[0][i];
+    }
+
+    return servers;
 }
 
 /* buidFlowMap flows -> [flow1, flow2, ..., flowN]
@@ -170,11 +215,11 @@ function processFile(text){
     var time_stats = generateTimeStats(flows);
 
     flow_map = buildFlowMap(flows, time_stats);
-    console.log(flow_map);
+    //console.log(flow_map);
 
 
-    console.log(flows);
-    console.log(time_stats);
+    //console.log(flows);
+    //console.log(time_stats);
 
     /* TODO: I shouldn't need the flows in the setup, right?*/
     setup(servers, flows, time_stats, flow_map);
@@ -234,12 +279,19 @@ function getServers(input) {
             var tags = input[flow]["trace-tags"];
             if (tags.length > 0) {
                 var src = tags[0].source;
+                var dst = tags[0].dest;
 
                 // Got to keep track of the size
                 if (servers[src] != 1) {
                     servers.size += 1;
                     servers[src] = 1;
                 }
+
+                if (servers[dst] != 1) {
+                    servers.size += 1;
+                    servers[dst] = 1;
+                }
+
             }
         }
     }
@@ -268,15 +320,16 @@ function setup(servers, flows, time_stats, flow_map) {
 
 
     // Add classes
+    var newSL = newCircleCoords(serverCircleRadius, numServers,
+                                    svgSize.x/2, svgSize.y/2);
 
-    createServers();
-    console.log("HELLO");
+    servers = createServers(newSL, serverRadius, servers);
 
-    console.log(numServers);
+    drawFlows(0, servers);
 
     // Create the SVG objects
-    //updateServers(SVG, serverLayout, serverRadius, servers);
-    setupSlider(SVG, time_stats);
+    //updateServers(serverLayout, serverRadius, servers);
+    setupSlider(SVG, time_stats, servers);
 }
 
 function createDefs(defs) {
@@ -309,12 +362,40 @@ function renderFlows(value, ts) {
 
 }
 
-function play() {
-    var value = $("#slider").slider("option", "value");
+
+/* FIX: Pick up here, Also, use the fucking change map*/
+function drawFlows(value, servers) {
+    var flows = flow_map[value];
+    console.log(flows);
+    debugger;
+    //for (var i = 0; i < flows.length; i++) {
+        var src = servers[flows.src];
+        var dst = servers[flows.dst];
+
+        /*var lines = SVG.selectAll("svg:line");
+        for(var j = 0; j < lines.length; j++) {
+            var line = lines[j];
+            var parent = line.parentNode();
+            parent.removeChild(line);
+        }
+         */
+        SVG.append("svg:line")
+            .attr("x1", parseInt(src.attributes.cx.nodeValue))
+            .attr("y1", parseInt(src.attributes.cy.nodeValue))
+            .attr("x2", parseInt(dst.attributes.cx.nodeValue))
+            .attr("y2", parseInt(dst.attributes.cy.nodeValue))
+            .style("stroke", "rgb(200, 200, 200)");
+        debugger;
+    //}
 
 }
 
-function setupSlider(SVG, ts) {
+function play() {
+    var value = $("#slider").slider("option", "value");
+    drawFlow(value);
+}
+
+function setupSlider(SVG, ts, servers) {
     $(function() {
         $("#button_bar")[0].style.display = "block";
         $( "#slider" ).slider({

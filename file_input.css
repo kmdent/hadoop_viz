@@ -27,7 +27,19 @@
     display: none;
 }
 
+/* SVG Objects*/
+
+svg .circle {
+  fill: steelblue;
+  stroke: white;
+  stroke-width: 2;
+} }
+
 svg .link_line {
   stroke: rgba(255,255,255,.5);
   stroke-width: 1.5;
+}
+
+svg .labels {
+    font-size: 10px;
 }
